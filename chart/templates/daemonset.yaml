@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: talisman
+  labels:
+    type: lxd
+spec:
+  selector:
+    matchLabels:
+      octopusexport: OctopusExport
+  revisionHistoryLimit: 1
+  minReadySeconds: 60
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        type: lxd
+        octopusexport: OctopusExport
+    spec:
+      volumes:
+        - name: kvm
+          hostPath:
+            path: /dev/kvm
+        - name: snap 
+          hostPath:
+            path: /var/snap/lxd/common/lxd
+            type: Directory
+      initContainers:
+      - name: init
+        image: 'tibbar/talisman:latest'
+        command: ["/bin/sh", "-c", "./lxc launch images:ubuntu/20.04 ubuntu-container --vm || true"]
+        volumeMounts:
+        - name: snap
+          mountPath: /var/lib/lxd
+        - name: kvm
+          mountPath: /dev/kvm
+      containers:
+        - name: talisman
+          volumeMounts:
+          - name: kvm
+            mountPath: /dev/kvm
+          - name: snap
+            mountPath: /var/lib/lxd
+          image: 'tibbar/talisman:latest'
+          command: ["./lxc"]
+          tty: true
+          args: ["console","ubuntu-container"]
+      serviceAccountName: {{ include "talisman.serviceAccountName" . }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - web
+                topologyKey: kubernetes.io/hostname
